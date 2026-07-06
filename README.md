@@ -1,4 +1,4 @@
-# <div align="center">📧 AI Email Manager — UAT</div>
+# <div align="center">📧 AI Email Manager — PROD</div>
 
 <div align="center">
   <p><strong>Hệ thống quản lý email thông minh tích hợp AI, triển khai trên GCP với kiến trúc 3-tier bảo mật cao</strong></p>
@@ -18,11 +18,11 @@
 
 ---
 
-## 🌐 Hệ Thống Triển Khai (UAT)
+## 🌐 Hệ Thống Triển Khai (PROD)
 
 | Dịch vụ | Địa chỉ URL | Trạng thái |
 | :--- | :--- | :--- |
-| **Giao diện người dùng (Frontend)** | [https://emailagent.ddnsfree.com](https://emailagent.ddnsfree.com) | `UAT` |
+| **Giao diện người dùng (Frontend)** | [https://emailagent.ddnsfree.com](https://emailagent.ddnsfree.com) | `PROD` |
 | **Tài liệu API (Swagger Docs)** | [https://emailagent.ddnsfree.com/docs](https://emailagent.ddnsfree.com/docs) | `Development only` |
 
 ---
