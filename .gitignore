@@ -1,0 +1,106 @@
+# ===================================================
+# TERRAFORM - Sensitive & Generated Files
+# ===================================================
+# !!! QUAN TRỌNG: Không commit file này lên Git !!!
+**/*.tfvars
+**/*.tfvars.json
+!**/*.tfvars.example
+
+# Terraform State Files (chứa toàn bộ thông tin hạ tầng)
+**/.terraform/
+**/.terraform.lock.hcl
+**/terraform.tfstate
+**/terraform.tfstate.*
+**/crash.log
+**/crash.*.log
+**/.terraform.tfstate.lock.info
+
+# ===================================================
+# PYTHON - Backend
+# ===================================================
+# Virtual environment
+venv/
+.venv/
+env/
+.env/
+ENV/
+
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.pyc
+*.pyo
+*.pyd
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# Test & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+
+# ===================================================
+# ENVIRONMENT VARIABLES & SECRETS
+# ===================================================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*secret*
+credentials.json
+application_default_credentials.json
+
+# ===================================================
+# IDE & OS
+# ===================================================
+# VSCode
+.vscode/
+*.code-workspace
+
+# JetBrains
+.idea/
+*.iml
+*.iws
+
+# macOS
+.DS_Store
+.AppleDouble
+
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Linux
+*~
+
+# ===================================================
+# LOGS
+# ===================================================
+*.log
+logs/
+
+# ===================================================
+# NODE & NEXT.JS - Frontend
+# ===================================================
+node_modules/
+.next/
+out/
+build/
+dist/
+.npm/
+.yarn/
+.pnp.*

@@ -1,0 +1,3 @@
+# tfvars example template - Terraform Variables
+# Copy file này thành terraform.tfvars và điền giá trị thực tế của bạn
+# cp terraform.tfvars.example terraform.tfvars
