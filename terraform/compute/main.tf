@@ -1,7 +1,7 @@
 # 1. Cloud Armor Security Policy (WAF)
 resource "google_compute_security_policy" "waf" {
-  name        = "uat-waf-policy"
-  description = "Basic WAF protection for UAT environment"
+  name        = "prod-waf-policy"
+  description = "Basic WAF protection for PROD environment"
 
   # Default rule: allow all traffic
   rule {
@@ -22,7 +22,7 @@ resource "google_compute_security_policy" "waf" {
     priority = "1000"
     match {
       expr {
-        expression = "evaluatePreconfiguredExpr('sqli-v33-stable') || evaluatePreconfiguredExpr('xss-v33-stable')"
+        expression = "evalprodePreconfiguredExpr('sqli-v33-stable') || evalprodePreconfiguredExpr('xss-v33-stable')"
       }
     }
     description = "Block SQLi and XSS"
@@ -105,13 +105,13 @@ resource "google_project_iam_member" "gcip_admin" {
 }
 
 resource "google_service_account" "vm_sa" {
-  account_id   = "uat-vm-service-account"
-  display_name = "UAT VM Service Account"
+  account_id   = "prod-vm-service-account"
+  display_name = "PROD VM Service Account"
 }
 
 # Secret Manager Secrets
 resource "google_secret_manager_secret" "db_password" {
-  secret_id = "uat-db-password"
+  secret_id = "prod-db-password"
   replication {
     auto {}
   }
@@ -124,7 +124,7 @@ resource "google_secret_manager_secret_version" "db_password_version" {
 }
 
 resource "google_secret_manager_secret" "openai_api_key" {
-  secret_id = "uat-openai-api-key"
+  secret_id = "prod-openai-api-key"
   replication {
     auto {}
   }
@@ -137,7 +137,7 @@ resource "google_secret_manager_secret_version" "openai_api_key_version" {
 }
 
 resource "google_secret_manager_secret" "discord_bot_token" {
-  secret_id = "uat-discord-bot-token"
+  secret_id = "prod-discord-bot-token"
   replication {
     auto {}
   }
@@ -150,7 +150,7 @@ resource "google_secret_manager_secret_version" "discord_bot_token_version" {
 }
 
 resource "google_secret_manager_secret" "encryption_key" {
-  secret_id = "uat-encryption-key"
+  secret_id = "prod-encryption-key"
   replication {
     auto {}
   }
@@ -163,7 +163,7 @@ resource "google_secret_manager_secret_version" "encryption_key_version" {
 }
 
 resource "google_secret_manager_secret" "google_client_secret" {
-  secret_id = "uat-google-client-secret"
+  secret_id = "prod-google-client-secret"
   replication {
     auto {}
   }
@@ -176,7 +176,7 @@ resource "google_secret_manager_secret_version" "google_client_secret_version" {
 }
 
 resource "google_secret_manager_secret" "discord_client_secret" {
-  secret_id = "uat-discord-client-secret"
+  secret_id = "prod-discord-client-secret"
   replication {
     auto {}
   }
@@ -234,7 +234,7 @@ resource "google_pubsub_subscription_iam_member" "vm_subscriber" {
 
 # 4. Instance Template for API Web Server VMs
 resource "google_compute_instance_template" "api_template" {
-  name_prefix  = "uat-api-template-"
+  name_prefix  = "prod-api-template-"
   machine_type = "e2-small"
   region       = var.region
 
@@ -257,18 +257,24 @@ resource "google_compute_instance_template" "api_template" {
 
   metadata_startup_script = <<-EOT
     #!/bin/bash
-    apt-get update
-    apt-get install -y python3 python3-pip git postgresql-client
     
-    # Setup app directory
+    # 1. Update and install dependencies
+    apt-get update
+    apt-get install -y python3 python3-pip python3-venv git postgresql-client curl
+    
+    # 2. Install Node.js & PM2
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash -
+    apt-get install -y nodejs
+    npm install -g pm2
+    
+    # 3. Setup app directory and clone public repo
     mkdir -p /opt/app
     cd /opt/app
+    rm -rf ai-email-agent-with-gcp
+    git clone https://github.com/khoiteychin/ai-email-agent-with-gcp.git
+    cd ai-email-agent-with-gcp/backend
     
-    # Note: In real setup, you would clone your Git repository here.
-    # We will write a placeholder startup logging.
-    echo "Starting UAT API server..."
-    
-    # Fetch secrets from Secret Manager
+    # 4. Fetch secrets from Secret Manager
     DB_PASSWORD=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.db_password.secret_id}" --project="${var.project_id}")
     OPENAI_API_KEY=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.openai_api_key.secret_id}" --project="${var.project_id}")
     DISCORD_BOT_TOKEN=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.discord_bot_token.secret_id}" --project="${var.project_id}")
@@ -276,7 +282,7 @@ resource "google_compute_instance_template" "api_template" {
     GOOGLE_CLIENT_SECRET=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.google_client_secret.secret_id}" --project="${var.project_id}")
     DISCORD_CLIENT_SECRET=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.discord_client_secret.secret_id}" --project="${var.project_id}")
 
-    # Environment variables
+    # 5. Export Environment variables
     export DATABASE_URL="postgresql+asyncpg://${var.db_user}:$${DB_PASSWORD}@${var.db_private_ip}/${var.db_name}"
     export DATABASE_URL_SYNC="postgresql://${var.db_user}:$${DB_PASSWORD}@${var.db_private_ip}/${var.db_name}"
     export ENVIRONMENT="production"
@@ -290,11 +296,18 @@ resource "google_compute_instance_template" "api_template" {
     export DISCORD_CLIENT_ID="${var.discord_client_id}"
     export DISCORD_CLIENT_SECRET="$${DISCORD_CLIENT_SECRET}"
     
-    echo "Starting UAT API server and Background Worker..."
-    # Startup python server and worker commands would go here
-    # e.g. 
-    # pm2 start run.py --name "api" --interpreter python3
-    # pm2 start run_worker.py --name "worker" --interpreter python3
+    # 6. Setup Python virtual environment
+    python3 -m venv venv
+    source venv/bin/activate
+    pip install -r requirements.txt
+    
+    # 7. Start apps via PM2 using the venv python
+    pm2 start run.py --name "email-api" --interpreter ./venv/bin/python
+    pm2 start run_worker.py --name "email-worker" --interpreter ./venv/bin/python
+    
+    # Save PM2 state to resurrect on reboot
+    pm2 save
+    env PATH=$PATH:/usr/bin pm2 startup systemd -u root --hp /root
   EOT
 
   lifecycle {
@@ -304,9 +317,9 @@ resource "google_compute_instance_template" "api_template" {
 
 # 5. Managed Instance Group (MIG) for API Servers
 resource "google_compute_region_instance_group_manager" "api_mig" {
-  name               = "uat-api-mig"
+  name               = "prod-api-mig"
   region             = var.region
-  base_instance_name = "uat-api"
+  base_instance_name = "prod-api"
   target_size        = 1 # Start with 1 instance
 
   version {
@@ -326,7 +339,7 @@ resource "google_compute_region_instance_group_manager" "api_mig" {
 
 # 6. Autoscaler for API Servers
 resource "google_compute_region_autoscaler" "api_autoscaler" {
-  name   = "uat-api-autoscaler"
+  name   = "prod-api-autoscaler"
   region = var.region
   target = google_compute_region_instance_group_manager.api_mig.id
 
@@ -343,7 +356,7 @@ resource "google_compute_region_autoscaler" "api_autoscaler" {
 
 # 7. Health Check for API Server
 resource "google_compute_health_check" "api_health" {
-  name                = "uat-api-health-check"
+  name                = "prod-api-health-check"
   check_interval_sec  = 10
   timeout_sec         = 5
   healthy_threshold   = 2
@@ -359,12 +372,12 @@ resource "google_compute_health_check" "api_health" {
 # 9. Global HTTP(S) Load Balancer configuration
 # Reserve static public IP
 resource "google_compute_global_address" "lb_ip" {
-  name = "uat-lb-ip"
+  name = "prod-lb-ip"
 }
 
 # Managed SSL Certificate
 resource "google_compute_managed_ssl_certificate" "cert" {
-  name = "uat-ssl-cert"
+  name = "prod-ssl-cert"
 
   managed {
     domains = [var.domain_name]
@@ -373,13 +386,13 @@ resource "google_compute_managed_ssl_certificate" "cert" {
 
 # URL Map
 resource "google_compute_url_map" "url_map" {
-  name            = "uat-url-map"
+  name            = "prod-url-map"
   default_service = google_compute_backend_service.api_backend.id
 }
 
 # Backend Service (with Cloud CDN and Cloud Armor enabled)
 resource "google_compute_backend_service" "api_backend" {
-  name                  = "uat-api-backend-service"
+  name                  = "prod-api-backend-service"
   protocol              = "HTTP"
   port_name             = "http"
   load_balancing_scheme = "EXTERNAL"
@@ -395,14 +408,14 @@ resource "google_compute_backend_service" "api_backend" {
 
 # Target HTTPS Proxy
 resource "google_compute_target_https_proxy" "https_proxy" {
-  name             = "uat-https-proxy"
+  name             = "prod-https-proxy"
   url_map          = google_compute_url_map.url_map.id
   ssl_certificates = [google_compute_managed_ssl_certificate.cert.id]
 }
 
 # Forwarding Rule
 resource "google_compute_global_forwarding_rule" "https_forwarding" {
-  name                  = "uat-https-forwarding-rule"
+  name                  = "prod-https-forwarding-rule"
   ip_address            = google_compute_global_address.lb_ip.address
   ip_protocol           = "TCP"
   port_range            = "443"
