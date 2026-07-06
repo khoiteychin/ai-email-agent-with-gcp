@@ -400,9 +400,6 @@ Trỏ **A Record** tên miền về địa chỉ IP này. SSL sẽ được tự
 > - **PKCE OAuth2**: Bảo vệ luồng xác thực Gmail chống Authorization Code Interception
 > - **Prompt Injection Shield**: Chặn các câu lệnh tấn công AI bằng tiếng Anh và tiếng Việt
 
-> [!WARNING]
-> **KHÔNG BAO GIỜ** commit file `terraform.tfvars` lên Git. File `.gitignore` đã được cấu hình để tự động loại trừ các file này.
-
 ---
 
 <div align="center">
