@@ -290,7 +290,11 @@ resource "google_compute_instance_template" "api_template" {
     export DISCORD_CLIENT_ID="${var.discord_client_id}"
     export DISCORD_CLIENT_SECRET="$${DISCORD_CLIENT_SECRET}"
     
-    # Startup python server commands would go here (e.g. uvicorn run:app)
+    echo "Starting UAT API server and Background Worker..."
+    # Startup python server and worker commands would go here
+    # e.g. 
+    # pm2 start run.py --name "api" --interpreter python3
+    # pm2 start run_worker.py --name "worker" --interpreter python3
   EOT
 
   lifecycle {
@@ -351,60 +355,6 @@ resource "google_compute_health_check" "api_health" {
   }
 }
 
-# 8. Standalone VM for Background Worker (Non-autoscaling)
-resource "google_compute_instance" "worker" {
-  name         = "uat-worker-instance"
-  machine_type = "e2-micro"
-  zone         = "${var.region}-a"
-
-  boot_disk {
-    initialize_params {
-      image = "debian-cloud/debian-11"
-    }
-  }
-
-  network_interface {
-    network    = var.vpc_id
-    subnetwork = var.app_subnet_id
-    # No public IP
-  }
-
-  service_account {
-    email  = google_service_account.vm_sa.email
-    scopes = ["cloud-platform"]
-  }
-
-  metadata_startup_script = <<-EOT
-    #!/bin/bash
-    apt-get update
-    apt-get install -y python3 python3-pip git
-    
-    # Fetch secrets from Secret Manager
-    DB_PASSWORD=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.db_password.secret_id}" --project="${var.project_id}")
-    OPENAI_API_KEY=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.openai_api_key.secret_id}" --project="${var.project_id}")
-    DISCORD_BOT_TOKEN=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.discord_bot_token.secret_id}" --project="${var.project_id}")
-    ENCRYPTION_KEY=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.encryption_key.secret_id}" --project="${var.project_id}")
-    GOOGLE_CLIENT_SECRET=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.google_client_secret.secret_id}" --project="${var.project_id}")
-    DISCORD_CLIENT_SECRET=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.discord_client_secret.secret_id}" --project="${var.project_id}")
-
-    # Environment variables
-    export DATABASE_URL="postgresql+asyncpg://${var.db_user}:$${DB_PASSWORD}@${var.db_private_ip}/${var.db_name}"
-    export DATABASE_URL_SYNC="postgresql://${var.db_user}:$${DB_PASSWORD}@${var.db_private_ip}/${var.db_name}"
-    export ENVIRONMENT="production"
-    export FIREBASE_PROJECT_ID="${var.project_id}"
-    export OPENAI_API_KEY="$${OPENAI_API_KEY}"
-    export DISCORD_BOT_TOKEN="$${DISCORD_BOT_TOKEN}"
-    export ENCRYPTION_KEY="$${ENCRYPTION_KEY}"
-    export GMAIL_PUBSUB_TOPIC="${google_pubsub_topic.gmail_topic.id}"
-    export GOOGLE_CLIENT_ID="${var.google_client_id}"
-    export GOOGLE_CLIENT_SECRET="$${GOOGLE_CLIENT_SECRET}"
-    export DISCORD_CLIENT_ID="${var.discord_client_id}"
-    export DISCORD_CLIENT_SECRET="$${DISCORD_CLIENT_SECRET}"
-    
-    echo "Starting background worker..."
-    # python3 run_worker.py
-  EOT
-}
 
 # 9. Global HTTP(S) Load Balancer configuration
 # Reserve static public IP
