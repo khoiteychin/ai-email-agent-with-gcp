@@ -36,7 +36,7 @@ def oauth_popup_response(provider: str, success: bool, message: str = "") -> HTM
     <script>
       const payload = {json.dumps(payload)};
       if (window.opener) {{
-        window.opener.postMessage(payload, "https://emailkhanh.freeddns.org");
+        window.opener.postMessage(payload, "https://emailagent.ddnsfree.com");
       }}
       window.close();
       setTimeout(() => {{

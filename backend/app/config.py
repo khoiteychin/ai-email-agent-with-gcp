@@ -22,12 +22,12 @@ class Settings(BaseSettings):
     # Google OAuth / Gmail
     GOOGLE_CLIENT_ID: str = ""
     GOOGLE_CLIENT_SECRET: str = ""
-    GOOGLE_REDIRECT_URI: str = "https://emailagent.ddnsfree.com/gmail/callback"
+    GOOGLE_REDIRECT_URI: str = "https://emailagent.ddnsfree.com/api/v1/gmail/callback"
 
     # Discord
     DISCORD_CLIENT_ID: str = ""
     DISCORD_CLIENT_SECRET: str = ""
-    DISCORD_REDIRECT_URI: str = "https://emailagent.ddnsfree.com/discord/callback"
+    DISCORD_REDIRECT_URI: str = "https://emailagent.ddnsfree.com/api/v1/discord/callback"
     DISCORD_BOT_TOKEN: str = ""
 
 
