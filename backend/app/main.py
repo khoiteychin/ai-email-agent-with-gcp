@@ -88,13 +88,18 @@ async def add_security_headers(request, call_next):
     return response
 
 # ─── Routers ────────────────────────────────────────────────────
-app.include_router(emails.router)
-app.include_router(ai.router)
-app.include_router(gmail.router)
-app.include_router(labels.router)
-app.include_router(user.router)
-app.include_router(discord.router)
-app.include_router(drafts.router)
+from fastapi import APIRouter
+
+api_router = APIRouter(prefix="/api/v1")
+api_router.include_router(emails.router)
+api_router.include_router(ai.router)
+api_router.include_router(gmail.router)
+api_router.include_router(labels.router)
+api_router.include_router(user.router)
+api_router.include_router(discord.router)
+api_router.include_router(drafts.router)
+
+app.include_router(api_router)
 
 
 # ─── Health check ───────────────────────────────────────────────

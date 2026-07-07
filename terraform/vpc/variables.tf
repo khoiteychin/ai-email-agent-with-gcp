@@ -11,7 +11,7 @@ variable "region" {
 
 variable "vpc_name" {
   type        = string
-  default     = "uat-vpc"
+  default     = "prod-vpc"
   description = "Name of the VPC network"
 }
 

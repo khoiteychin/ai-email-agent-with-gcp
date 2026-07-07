@@ -61,3 +61,16 @@ resource "google_compute_router_nat" "nat" {
     source_ip_ranges_to_nat = ["ALL_IP_RANGES"]
   }
 }
+
+# Allow IAP for SSH debugging
+resource "google_compute_firewall" "allow_iap" {
+  name    = "prod-allow-iap"
+  network = google_compute_network.vpc.name
+
+  allow {
+    protocol = "tcp"
+    ports    = ["22"]
+  }
+
+  source_ranges = ["35.235.240.0/20"]
+}

@@ -30,18 +30,18 @@ variable "db_private_ip" {
 }
 
 variable "db_user" {
-  type        = string
-  default     = "postgres"
+  type    = string
+  default = "postgres"
 }
 
 variable "db_name" {
-  type        = string
-  default     = "ai_email_manager"
+  type    = string
+  default = "ai_email_manager"
 }
 
 variable "db_password" {
-  type        = string
-  sensitive   = true
+  type      = string
+  sensitive = true
 }
 
 variable "domain_name" {
@@ -51,15 +51,15 @@ variable "domain_name" {
 }
 
 variable "openai_api_key" {
-  type        = string
-  sensitive   = true
-  default     = ""
+  type      = string
+  sensitive = true
+  default   = ""
 }
 
 variable "discord_bot_token" {
-  type        = string
-  sensitive   = true
-  default     = ""
+  type      = string
+  sensitive = true
+  default   = ""
 }
 
 variable "encryption_key" {
@@ -92,4 +92,11 @@ variable "discord_client_secret" {
   sensitive   = true
   default     = ""
   description = "Discord Application Client Secret"
+}
+
+variable "frontend_env" {
+  type        = string
+  sensitive   = true
+  default     = ""
+  description = "Environment variables for Next.js frontend"
 }

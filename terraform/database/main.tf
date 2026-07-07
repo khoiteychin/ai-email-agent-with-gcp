@@ -14,7 +14,7 @@ resource "google_project_service" "sqladmin" {
 
 # 1. Reserve internal IP range for Private Service Access
 resource "google_compute_global_address" "private_ip_alloc" {
-  name          = "private-ip-alloc"
+  name          = "prod-private-ip-alloc"
   purpose       = "VPC_PEERING"
   address_type  = "INTERNAL"
   prefix_length = 16

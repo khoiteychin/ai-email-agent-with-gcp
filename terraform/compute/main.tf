@@ -188,6 +188,19 @@ resource "google_secret_manager_secret_version" "discord_client_secret_version" 
   secret_data = var.discord_client_secret
 }
 
+resource "google_secret_manager_secret" "frontend_env" {
+  secret_id = "prod-frontend-env"
+  replication {
+    auto {}
+  }
+  depends_on = [google_project_service.secretmanager]
+}
+
+resource "google_secret_manager_secret_version" "frontend_env_version" {
+  secret      = google_secret_manager_secret.frontend_env.id
+  secret_data = var.frontend_env
+}
+
 # IAM Permissions for Service Account to access Secrets
 resource "google_secret_manager_secret_iam_member" "db_password_accessor" {
   secret_id = google_secret_manager_secret.db_password.id
@@ -225,6 +238,12 @@ resource "google_secret_manager_secret_iam_member" "discord_client_secret_access
   member    = "serviceAccount:${google_service_account.vm_sa.email}"
 }
 
+resource "google_secret_manager_secret_iam_member" "frontend_env_accessor" {
+  secret_id = google_secret_manager_secret.frontend_env.id
+  role      = "roles/secretmanager.secretAccessor"
+  member    = "serviceAccount:${google_service_account.vm_sa.email}"
+}
+
 # Grant VM Service Account permission to subscribe to Pub/Sub
 resource "google_pubsub_subscription_iam_member" "vm_subscriber" {
   subscription = google_pubsub_subscription.gmail_sub.name
@@ -237,6 +256,7 @@ resource "google_compute_instance_template" "api_template" {
   name_prefix  = "prod-api-template-"
   machine_type = "e2-small"
   region       = var.region
+  tags         = ["api-server"]
 
   network_interface {
     network    = var.vpc_id
@@ -245,7 +265,7 @@ resource "google_compute_instance_template" "api_template" {
   }
 
   disk {
-    source_image = "debian-cloud/debian-11"
+    source_image = "debian-cloud/debian-12"
     auto_delete  = true
     boot         = true
   }
@@ -255,7 +275,7 @@ resource "google_compute_instance_template" "api_template" {
     scopes = ["cloud-platform"]
   }
 
-  metadata_startup_script = <<-EOT
+  metadata_startup_script = replace(<<-EOT
     #!/bin/bash
     
     # 1. Update and install dependencies
@@ -282,33 +302,79 @@ resource "google_compute_instance_template" "api_template" {
     GOOGLE_CLIENT_SECRET=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.google_client_secret.secret_id}" --project="${var.project_id}")
     DISCORD_CLIENT_SECRET=$(gcloud secrets versions access latest --secret="${google_secret_manager_secret.discord_client_secret.secret_id}" --project="${var.project_id}")
 
-    # 5. Export Environment variables
-    export DATABASE_URL="postgresql+asyncpg://${var.db_user}:$${DB_PASSWORD}@${var.db_private_ip}/${var.db_name}"
-    export DATABASE_URL_SYNC="postgresql://${var.db_user}:$${DB_PASSWORD}@${var.db_private_ip}/${var.db_name}"
-    export ENVIRONMENT="production"
-    export FIREBASE_PROJECT_ID="${var.project_id}"
-    export OPENAI_API_KEY="$${OPENAI_API_KEY}"
-    export DISCORD_BOT_TOKEN="$${DISCORD_BOT_TOKEN}"
-    export ENCRYPTION_KEY="$${ENCRYPTION_KEY}"
-    export GMAIL_PUBSUB_TOPIC="${google_pubsub_topic.gmail_topic.id}"
-    export GOOGLE_CLIENT_ID="${var.google_client_id}"
-    export GOOGLE_CLIENT_SECRET="$${GOOGLE_CLIENT_SECRET}"
-    export DISCORD_CLIENT_ID="${var.discord_client_id}"
-    export DISCORD_CLIENT_SECRET="$${DISCORD_CLIENT_SECRET}"
+    # 5. Export Environment variables and save to .env
+    cat <<EOF > /opt/app/ai-email-agent-with-gcp/backend/.env
+DATABASE_URL="postgresql+asyncpg://${var.db_user}:$${DB_PASSWORD}@${var.db_private_ip}/${var.db_name}"
+DATABASE_URL_SYNC="postgresql://${var.db_user}:$${DB_PASSWORD}@${var.db_private_ip}/${var.db_name}"
+ENVIRONMENT="production"
+FIREBASE_PROJECT_ID="${var.project_id}"
+OPENAI_API_KEY="$${OPENAI_API_KEY}"
+DISCORD_BOT_TOKEN="$${DISCORD_BOT_TOKEN}"
+ENCRYPTION_KEY="$${ENCRYPTION_KEY}"
+GMAIL_PUBSUB_TOPIC="${google_pubsub_topic.gmail_topic.id}"
+GOOGLE_CLIENT_ID="${var.google_client_id}"
+GOOGLE_CLIENT_SECRET="$${GOOGLE_CLIENT_SECRET}"
+DISCORD_CLIENT_ID="${var.discord_client_id}"
+DISCORD_CLIENT_SECRET="$${DISCORD_CLIENT_SECRET}"
+EOF
+    
+    # Still export them for the migration script that runs right after
+    set -a
+    source /opt/app/ai-email-agent-with-gcp/backend/.env
+    set +a
     
     # 6. Setup Python virtual environment
     python3 -m venv venv
     source venv/bin/activate
     pip install -r requirements.txt
     
-    # 7. Start apps via PM2 using the venv python
-    pm2 start run.py --name "email-api" --interpreter ./venv/bin/python
-    pm2 start run_worker.py --name "email-worker" --interpreter ./venv/bin/python
+    # Run Database Migration
+    python app/run_migration.py
+        
+    # 7. Setup Next.js Frontend
+    cd /opt/app/ai-email-agent-with-gcp/frontend
     
+    # Fetch frontend env from Secret Manager
+    gcloud secrets versions access latest --secret="${google_secret_manager_secret.frontend_env.secret_id}" --project="${var.project_id}" > .env
+    echo "" >> .env
+    echo "NEXT_PUBLIC_API_URL=https://${var.domain_name}/api/v1" >> .env
+    
+    npm install --legacy-peer-deps
+    npm run build
+    
+    # 8. Start apps via PM2 using ecosystem.config.js
+    cat << 'EOF' > /opt/app/ai-email-agent-with-gcp/ecosystem.config.js
+module.exports = {
+  apps : [
+    {
+      name: "email-api",
+      script: "run.py",
+      cwd: "/opt/app/ai-email-agent-with-gcp/backend",
+      interpreter: "/opt/app/ai-email-agent-with-gcp/backend/venv/bin/python"
+    },
+    {
+      name: "email-worker",
+      script: "run_worker.py",
+      cwd: "/opt/app/ai-email-agent-with-gcp/backend",
+      interpreter: "/opt/app/ai-email-agent-with-gcp/backend/venv/bin/python"
+    },
+    {
+      name: "email-frontend",
+      script: "npm",
+      args: "start",
+      cwd: "/opt/app/ai-email-agent-with-gcp/frontend"
+    }
+  ]
+}
+EOF
+
+    cd /opt/app/ai-email-agent-with-gcp
+    pm2 start ecosystem.config.js 
     # Save PM2 state to resurrect on reboot
     pm2 save
     env PATH=$PATH:/usr/bin pm2 startup systemd -u root --hp /root
   EOT
+  , "\r\n", "\n")
 
   lifecycle {
     create_before_destroy = true
@@ -327,13 +393,18 @@ resource "google_compute_region_instance_group_manager" "api_mig" {
   }
 
   named_port {
-    name = "http"
+    name = "http-api"
     port = 3001
+  }
+
+  named_port {
+    name = "http-web"
+    port = 3000
   }
 
   auto_healing_policies {
     health_check      = google_compute_health_check.api_health.id
-    initial_delay_sec = 180
+    initial_delay_sec = 600
   }
 }
 
@@ -368,6 +439,19 @@ resource "google_compute_health_check" "api_health" {
   }
 }
 
+resource "google_compute_health_check" "web_health" {
+  name                = "prod-web-health-check"
+  check_interval_sec  = 10
+  timeout_sec         = 5
+  healthy_threshold   = 2
+  unhealthy_threshold = 2
+
+  http_health_check {
+    port         = 3000
+    request_path = "/login"
+  }
+}
+
 
 # 9. Global HTTP(S) Load Balancer configuration
 # Reserve static public IP
@@ -387,17 +471,48 @@ resource "google_compute_managed_ssl_certificate" "cert" {
 # URL Map
 resource "google_compute_url_map" "url_map" {
   name            = "prod-url-map"
-  default_service = google_compute_backend_service.api_backend.id
+  default_service = google_compute_backend_service.web_backend.id
+
+  host_rule {
+    hosts        = ["*"]
+    path_matcher = "allpaths"
+  }
+
+  path_matcher {
+    name            = "allpaths"
+    default_service = google_compute_backend_service.web_backend.id
+
+    path_rule {
+      paths   = ["/api/v1/*", "/docs", "/openapi.json", "/health"]
+      service = google_compute_backend_service.api_backend.id
+    }
+  }
 }
 
-# Backend Service (with Cloud CDN and Cloud Armor enabled)
+# Backend Service for API
 resource "google_compute_backend_service" "api_backend" {
   name                  = "prod-api-backend-service"
   protocol              = "HTTP"
-  port_name             = "http"
+  port_name             = "http-api"
   load_balancing_scheme = "EXTERNAL"
   timeout_sec           = 30
   health_checks         = [google_compute_health_check.api_health.id]
+  security_policy       = google_compute_security_policy.waf.id
+  enable_cdn            = false
+
+  backend {
+    group = google_compute_region_instance_group_manager.api_mig.instance_group
+  }
+}
+
+# Backend Service for Web
+resource "google_compute_backend_service" "web_backend" {
+  name                  = "prod-web-backend-service"
+  protocol              = "HTTP"
+  port_name             = "http-web"
+  load_balancing_scheme = "EXTERNAL"
+  timeout_sec           = 30
+  health_checks         = [google_compute_health_check.web_health.id]
   security_policy       = google_compute_security_policy.waf.id
   enable_cdn            = true
 
@@ -431,7 +546,7 @@ resource "google_compute_firewall" "allow_lb" {
 
   allow {
     protocol = "tcp"
-    ports    = ["3001"]
+    ports    = ["3000", "3001"]
   }
 
   target_tags = ["api-server"]

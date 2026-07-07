@@ -21,7 +21,7 @@ variable "vpc_name" {
 
 variable "db_instance_name" {
   type        = string
-  default     = "uat-postgres"
+  default     = "prod-postgres"
   description = "Name of the SQL Database Instance"
 }
 
